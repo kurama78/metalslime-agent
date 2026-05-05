@@ -423,10 +423,23 @@ function renderSources(sources) {
 
     const meta = document.createElement("div");
     meta.className = "source-meta";
-    meta.textContent = `${basename(source.file)}:${source.lineStart}-${source.lineEnd} · ${source.topic}`;
+    if (source.type === "web") {
+      meta.textContent = `${source.title || "Web source"} · live web`;
+    } else {
+      meta.textContent = `${basename(source.file)}:${source.lineStart}-${source.lineEnd} · ${source.topic}`;
+    }
 
     const body = document.createElement("p");
-    body.textContent = source.text;
+    if (source.type === "web" && source.url) {
+      const link = document.createElement("a");
+      link.href = source.url;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = source.url;
+      body.append(link);
+    } else {
+      body.textContent = source.text;
+    }
 
     card.append(meta, body);
     sourcesEl.appendChild(card);

@@ -303,19 +303,25 @@ async function handleApi(req, res, requestUrl) {
     }
 
     const retrieval = retrieveRelevant(message, 8);
-    const answer = getApiKey()
+    const llmResult = getApiKey()
       ? await generateWithProvider(message, history, retrieval)
       : generateLocalAnswer(message, retrieval);
+    const answer = typeof llmResult === "string" ? llmResult : llmResult.answer;
+    const webSources = typeof llmResult === "string" ? [] : llmResult.webSources || [];
 
     sendJson(res, 200, {
       answer,
-      sources: retrieval.map((item) => ({
-        file: item.file,
-        lineStart: item.lineStart,
-        lineEnd: item.lineEnd,
-        topic: item.topic,
-        text: item.text
-      })),
+      sources: [
+        ...retrieval.map((item) => ({
+          type: "corpus",
+          file: item.file,
+          lineStart: item.lineStart,
+          lineEnd: item.lineEnd,
+          topic: item.topic,
+          text: item.text
+        })),
+        ...webSources
+      ],
       mode: getApiKey() ? getProvider() : "local"
     });
     return;
@@ -634,6 +640,7 @@ function retrieveRelevant(query, limit) {
 
 async function generateWithOpenAI(message, history, retrieval) {
   const model = getModel();
+  const freshnessWarning = buildFreshnessInstruction(message, false);
   const evidence = retrieval
     .map(
       (item, index) =>
@@ -652,7 +659,7 @@ async function generateWithOpenAI(message, history, retrieval) {
       content: [
         {
           type: "text",
-          text: `${state.agentPrompt}\n\nOnly answer from the provided materials and obvious inference. Do not invent holdings or precise views that are not supported by the source documents.`
+          text: `${state.agentPrompt}\n\nToday is ${getCurrentDateString()}.\n\nOnly answer from the provided materials and obvious inference. Do not invent holdings or precise views that are not supported by the source documents.\n\n${freshnessWarning}`
         }
       ]
     },
@@ -678,22 +685,29 @@ async function generateWithOpenAI(message, history, retrieval) {
 
   if (!response.ok) {
     const detail = await response.text();
-    return [
+    return {
+      answer: [
       "OpenAI API call failed.",
       "",
       detail.slice(0, 300),
       "",
       generateLocalAnswer(message, retrieval)
-    ].join("\n");
+      ].join("\n"),
+      webSources: []
+    };
   }
 
   const data = await response.json();
-  return data.output_text?.trim() || generateLocalAnswer(message, retrieval);
+  return {
+    answer: data.output_text?.trim() || generateLocalAnswer(message, retrieval),
+    webSources: []
+  };
 }
 
 async function generateWithGemini(message, history, retrieval) {
   const model = getModel();
-  const systemText = `${state.agentPrompt}\n\nOnly answer from the provided materials and obvious inference. Do not invent holdings or precise views that are not supported by the source documents.`;
+  const grounded = needsFreshPublicInfo(message);
+  const systemText = `${state.agentPrompt}\n\nToday is ${getCurrentDateString()}.\n\nOnly answer from the provided materials and obvious inference. Do not invent holdings or precise views that are not supported by the source documents.\n\n${buildFreshnessInstruction(message, grounded)}`;
   const evidence = retrieval
     .map(
       (item, index) =>
@@ -720,21 +734,36 @@ async function generateWithGemini(message, history, retrieval) {
         role: "user",
         parts: [{ text: promptText }]
       }
-    ]
+    ],
+    ...(grounded
+      ? {
+          tools: [
+            {
+              google_search: {}
+            }
+          ]
+        }
+      : {})
   };
 
   try {
     const data = await callGemini(model, getApiKey(), payload);
     const text = extractGeminiText(data);
-    return text || generateLocalAnswer(message, retrieval);
+    return {
+      answer: text || generateLocalAnswer(message, retrieval),
+      webSources: extractGroundingSources(data)
+    };
   } catch (error) {
-    return [
+    return {
+      answer: [
       "Gemini API call failed.",
       "",
       String(error.message || error).slice(0, 500),
       "",
       generateLocalAnswer(message, retrieval)
-    ].join("\n");
+      ].join("\n"),
+      webSources: []
+    };
   }
 }
 
@@ -772,7 +801,7 @@ function generateLocalAnswer(message, retrieval) {
 
   lines.push("");
   lines.push("Note");
-  lines.push("No external LLM API is configured, so this answer is generated from local retrieval plus a rule-based Metalslime template. If you set `OPENAI_API_KEY`, the app will switch to retrieval-augmented chat mode.");
+  lines.push("No external LLM API is configured, so this answer is generated from local retrieval plus a rule-based Metalslime template. For time-sensitive public information, this mode cannot verify live web data.");
   return lines.join("\n");
 }
 
@@ -973,6 +1002,54 @@ function maskApiKey(apiKey) {
   return `${apiKey.slice(0, 4)}${"*".repeat(Math.max(4, apiKey.length - 8))}${apiKey.slice(-4)}`;
 }
 
+function getCurrentDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function needsFreshPublicInfo(message) {
+  const query = String(message || "").toLowerCase();
+  const patterns = [
+    "latest",
+    "most recent",
+    "today",
+    "current",
+    "now",
+    "this week",
+    "this month",
+    "2025",
+    "2026",
+    "最近",
+    "最新",
+    "当前",
+    "现在",
+    "今天",
+    "近期",
+    "今年",
+    "本周",
+    "本月",
+    "财报",
+    "业绩",
+    "q1",
+    "q2",
+    "q3",
+    "q4"
+  ];
+
+  return patterns.some((pattern) => query.includes(pattern));
+}
+
+function buildFreshnessInstruction(message, grounded) {
+  if (!needsFreshPublicInfo(message)) {
+    return "If the question is not time-sensitive, prioritize the provided Metalslime corpus and your reasoning structure.";
+  }
+
+  if (grounded) {
+    return "This question may depend on current or recent public information. Use Google Search grounding when needed. If you rely on current public information, anchor your answer to concrete dates and prefer grounded facts over model memory.";
+  }
+
+  return "This question may depend on current or recent public information. You do not have live web verification in this mode. Do not guess current facts or imply real-time certainty. If freshness matters, say that current public information cannot be verified in the current mode.";
+}
+
 function extractGeminiText(data) {
   const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
   const parts = candidates[0]?.content?.parts;
@@ -984,6 +1061,34 @@ function extractGeminiText(data) {
     .filter(Boolean)
     .join("\n")
     .trim();
+}
+
+function extractGroundingSources(data) {
+  const chunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks;
+  if (!Array.isArray(chunks)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const sources = [];
+
+  for (const chunk of chunks) {
+    const uri = chunk?.web?.uri;
+    const title = chunk?.web?.title || "web";
+    if (!uri || seen.has(uri)) {
+      continue;
+    }
+    seen.add(uri);
+    sources.push({
+      type: "web",
+      topic: "web",
+      title,
+      url: uri,
+      text: title
+    });
+  }
+
+  return sources.slice(0, 8);
 }
 
 function jsonSanitizer(_key, value) {
