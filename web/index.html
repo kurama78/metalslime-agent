@@ -74,14 +74,14 @@
         <section class="panel">
           <h2>Admin Import</h2>
           <p id="runtimeImportHint" class="hint">
-            Upload runtime corpus entries and rebuild the agent without redeploying.
+            Upload `.md` files and rebuild the agent without redeploying.
           </p>
-          <label class="field-label" for="runtimeTitleInput">Title</label>
-          <input id="runtimeTitleInput" class="text-input" placeholder="Optional title" />
-          <label class="field-label" for="runtimeFileNameInput">File name</label>
-          <input id="runtimeFileNameInput" class="text-input" placeholder="Optional file name" />
-          <label class="field-label" for="runtimeContentInput">Comment / reply content</label>
-          <textarea id="runtimeContentInput" class="composer-input" rows="8" placeholder="Paste the new post, comment, or reply here."></textarea>
+          <label class="field-label" for="runtimeFileInput">Markdown file</label>
+          <input id="runtimeFileInput" class="text-input" type="file" accept=".md,text/markdown,text/plain" />
+          <label class="field-label" for="runtimeTitleInput">Title override</label>
+          <input id="runtimeTitleInput" class="text-input" placeholder="Optional title override" />
+          <label class="field-label" for="runtimeContentPreview">File preview</label>
+          <textarea id="runtimeContentPreview" class="composer-input" rows="8" placeholder="Selected markdown content will appear here." readonly></textarea>
           <button id="runtimeImportBtn" class="primary-btn">Import And Rebuild</button>
         </section>
 

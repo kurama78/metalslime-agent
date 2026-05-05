@@ -20,9 +20,9 @@ const apiKeyInputEl = document.getElementById("apiKeyInput");
 const apiKeyHintEl = document.getElementById("apiKeyHint");
 const settingsModeHintEl = document.getElementById("settingsModeHint");
 const runtimeImportHintEl = document.getElementById("runtimeImportHint");
+const runtimeFileInputEl = document.getElementById("runtimeFileInput");
 const runtimeTitleInputEl = document.getElementById("runtimeTitleInput");
-const runtimeFileNameInputEl = document.getElementById("runtimeFileNameInput");
-const runtimeContentInputEl = document.getElementById("runtimeContentInput");
+const runtimeContentPreviewEl = document.getElementById("runtimeContentPreview");
 const runtimeImportBtnEl = document.getElementById("runtimeImportBtn");
 const connectionBannerEl = document.getElementById("connectionBanner");
 const modeBadgeEl = document.getElementById("modeBadge");
@@ -32,6 +32,7 @@ const builtAtEl = document.getElementById("builtAt");
 
 const history = [];
 let isAuthenticated = false;
+let selectedRuntimeFile = null;
 
 const MODEL_PRESETS = {
   gemini: [
@@ -78,6 +79,7 @@ function bindEvents() {
   formEl.addEventListener("submit", onSubmit);
   rebuildBtn.addEventListener("click", onRebuild);
   runtimeImportBtnEl.addEventListener("click", onRuntimeImport);
+  runtimeFileInputEl.addEventListener("change", onRuntimeFileChange);
   saveSettingsBtn.addEventListener("click", onSaveSettings);
   clearSettingsBtn.addEventListener("click", onClearSettings);
   providerInputEl.addEventListener("change", onProviderChange);
@@ -90,6 +92,26 @@ function bindEvents() {
       inputEl.focus();
     });
   });
+}
+
+async function onRuntimeFileChange(event) {
+  selectedRuntimeFile = event.target.files?.[0] || null;
+
+  if (!selectedRuntimeFile) {
+    runtimeContentPreviewEl.value = "";
+    return;
+  }
+
+  if (!selectedRuntimeFile.name.toLowerCase().endsWith(".md")) {
+    runtimeContentPreviewEl.value = "";
+    selectedRuntimeFile = null;
+    runtimeFileInputEl.value = "";
+    appendMessage("assistant", "Import failed: please select a .md file.");
+    return;
+  }
+
+  const content = await selectedRuntimeFile.text();
+  runtimeContentPreviewEl.value = content;
 }
 
 async function onLogin(event) {
@@ -234,9 +256,14 @@ async function onSaveSettings(event) {
 }
 
 async function onRuntimeImport() {
-  const content = runtimeContentInputEl.value.trim();
+  if (!selectedRuntimeFile) {
+    appendMessage("assistant", "Import failed: please select a markdown file first.");
+    return;
+  }
+
+  const content = runtimeContentPreviewEl.value.trim();
   if (!content) {
-    appendMessage("assistant", "Import failed: content is required.");
+    appendMessage("assistant", "Import failed: the selected file is empty.");
     return;
   }
 
@@ -249,14 +276,15 @@ async function onRuntimeImport() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: runtimeTitleInputEl.value.trim(),
-        fileName: runtimeFileNameInputEl.value.trim(),
+        fileName: selectedRuntimeFile.name,
         content
       })
     });
 
     runtimeTitleInputEl.value = "";
-    runtimeFileNameInputEl.value = "";
-    runtimeContentInputEl.value = "";
+    runtimeFileInputEl.value = "";
+    runtimeContentPreviewEl.value = "";
+    selectedRuntimeFile = null;
     appendMessage(
       "assistant",
       `Runtime corpus imported.\nFile: ${data.fileName}\nFiles: ${data.stats.fileCount}\nChunks: ${data.stats.chunkCount}\nTime: ${formatTime(data.lastBuiltAt)}`
@@ -477,9 +505,9 @@ function renderSettingsMode(locked) {
 }
 
 function renderRuntimeImportMode(enabled, runtimeDir) {
+  runtimeFileInputEl.disabled = !enabled;
   runtimeTitleInputEl.disabled = !enabled;
-  runtimeFileNameInputEl.disabled = !enabled;
-  runtimeContentInputEl.disabled = !enabled;
+  runtimeContentPreviewEl.disabled = !enabled;
   runtimeImportBtnEl.disabled = !enabled;
 
   runtimeImportHintEl.textContent = enabled
