@@ -140,9 +140,7 @@ server.listen(port, () => {
 
 async function initialize() {
   await fs.mkdir(dataDir, { recursive: true });
-  if (runtimeSourceDir) {
-    await fs.mkdir(runtimeSourceDir, { recursive: true });
-  }
+  state.runtimeSourceDir = await ensureRuntimeSourceDir(runtimeSourceDir);
   state.profile = await safeRead(profilePath);
   state.agentPrompt = await safeRead(promptPath);
   state.settings = await loadSettings();
@@ -1167,6 +1165,27 @@ function renderRuntimeMarkdown(title, content) {
   lines.push(content.trim());
   lines.push("");
   return lines.join("\n");
+}
+
+async function ensureRuntimeSourceDir(dir) {
+  if (!dir) {
+    return "";
+  }
+
+  try {
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+  } catch (error) {
+    if (hostedDeployment) {
+      console.warn(
+        `Runtime corpus disabled because the configured path is not writable: ${dir}. ` +
+          `Attach a Render persistent disk and mount it to the configured path to enable runtime imports.`
+      );
+      console.warn(error);
+      return "";
+    }
+    throw error;
+  }
 }
 
 function isPublicApiRoute(pathname) {

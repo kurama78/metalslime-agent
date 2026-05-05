@@ -15,5 +15,3 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: METALSLIME_RUNTIME_SOURCE_DIR
-        value: /var/data/metalslime-runtime
