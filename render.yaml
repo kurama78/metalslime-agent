@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: metalslime-agent
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemini-3-flash-preview
+      - key: METALSLIME_LOGIN_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

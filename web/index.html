@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Metalslime Agent</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="loginOverlay" class="login-overlay">
+      <div class="login-card">
+        <div class="brand">
+          <div class="brand-mark">M</div>
+          <div>
+            <h1>Metalslime Agent</h1>
+            <p>Protected access</p>
+          </div>
+        </div>
+        <form id="loginForm" class="login-form">
+          <label class="field-label" for="loginKeyInput">Login key</label>
+          <input id="loginKeyInput" class="text-input" type="password" autocomplete="current-password" />
+          <p id="loginError" class="hint login-error"></p>
+          <button id="loginBtn" class="primary-btn" type="submit">Unlock</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">M</div>
+          <div>
+            <h1>Metalslime Agent</h1>
+            <p>Local retrieval with optional LLM mode</p>
+          </div>
+        </div>
+
+        <section class="panel">
+          <h2>Status</h2>
+          <div class="button-row top-row">
+            <div id="connectionBanner" class="connection-banner connection-local">Local retrieval only</div>
+            <button id="logoutBtn" class="secondary-btn button-compact" type="button">Logout</button>
+          </div>
+          <div class="status-grid">
+            <div>
+              <span class="label">Mode</span>
+              <strong id="modeBadge">Loading</strong>
+            </div>
+            <div>
+              <span class="label">Files</span>
+              <strong id="fileCount">-</strong>
+            </div>
+            <div>
+              <span class="label">Chunks</span>
+              <strong id="chunkCount">-</strong>
+            </div>
+            <div>
+              <span class="label">Last build</span>
+              <strong id="builtAt">-</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Source</h2>
+          <label class="field-label" for="sourceDir">Metalslime folder</label>
+          <input id="sourceDir" class="text-input" value="Metalslime" />
+          <button id="rebuildBtn" class="primary-btn">Rebuild Agent</button>
+          <p class="hint">
+            Drop new posts or replies into this folder, then rebuild to refresh the agent.
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2>LLM Settings</h2>
+          <p id="settingsModeHint" class="hint">
+            Configure provider, model, and API keys here.
+          </p>
+          <label class="field-label" for="providerInput">Provider</label>
+          <select id="providerInput" class="text-input">
+            <option value="gemini">Gemini</option>
+            <option value="openai">OpenAI</option>
+          </select>
+          <label class="field-label" for="modelPresetInput">Model preset</label>
+          <select id="modelPresetInput" class="text-input"></select>
+          <label class="field-label" for="modelInput">Model name</label>
+          <input id="modelInput" class="text-input" value="gemini-2.5-flash" />
+          <label class="field-label" for="apiKeyInput">API key</label>
+          <input id="apiKeyInput" class="text-input" type="password" placeholder="sk-..." />
+          <p id="apiKeyHint" class="hint">No API key saved.</p>
+          <div class="button-row">
+            <button id="saveSettingsBtn" class="primary-btn button-inline">Save Settings</button>
+            <button id="clearSettingsBtn" class="secondary-btn button-inline" type="button">Clear Key</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Starter prompts</h2>
+          <div class="chips">
+            <button class="chip">Please analyze whether new energy looks like a rebound or a beta repair.</button>
+            <button class="chip">Why is broad consumer weak in this framework?</button>
+            <button class="chip">What is the key logic for tire exports?</button>
+            <button class="chip">I am down 30%. Focus only on position handling.</button>
+          </div>
+        </section>
+      </aside>
+
+      <main class="main-panel">
+        <section class="chat-panel">
+          <div id="messages" class="messages"></div>
+
+          <form id="chatForm" class="composer">
+            <textarea
+              id="messageInput"
+              class="composer-input"
+              placeholder="Ask in Chinese or English. Example: Analyze whether new energy now looks more like a rebound or a beta repair in Metalslime's framework."
+              rows="4"
+            ></textarea>
+            <div class="composer-row">
+              <span class="composer-hint">Without a saved API key, the app uses local retrieval mode.</span>
+              <button type="submit" class="primary-btn">Send</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="sources-panel">
+          <div class="sources-header">
+            <h2>Evidence</h2>
+            <p>Source snippets used in the latest answer</p>
+          </div>
+          <div id="sources" class="sources-list">
+            <div class="empty-state">Evidence will appear here after you send a message.</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
