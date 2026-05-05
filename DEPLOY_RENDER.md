@@ -20,6 +20,7 @@ Recommended:
 
 - `LLM_PROVIDER=gemini`
 - `GEMINI_MODEL=gemini-3-flash-preview`
+- `METALSLIME_RUNTIME_SOURCE_DIR=/var/data/metalslime-runtime`
 
 Optional for OpenAI:
 
@@ -42,3 +43,4 @@ Optional for OpenAI:
 - On Render, secrets should not be stored in `data/settings.json`.
 - The `Metalslime` folder is deployed as part of the repo contents.
 - To update the agent corpus, add new files to `Metalslime`, commit, and redeploy.
+- If you want to upload new comments/replies from the web UI without redeploying, attach a Persistent Disk in Render and mount it at `/var/data`, then keep `METALSLIME_RUNTIME_SOURCE_DIR=/var/data/metalslime-runtime`.

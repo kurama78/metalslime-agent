@@ -45,6 +45,7 @@ Recommended for hosted deployment:
 - `GEMINI_API_KEY`
 - `LLM_PROVIDER=gemini`
 - `GEMINI_MODEL=gemini-3-flash-preview`
+- `METALSLIME_RUNTIME_SOURCE_DIR=/var/data/metalslime-runtime`
 
 Optional for OpenAI:
 
@@ -61,3 +62,4 @@ See [`DEPLOY_RENDER.md`](./DEPLOY_RENDER.md) for the deployment steps.
 - Runtime data and secrets are intentionally excluded from Git.
 - The app rebuilds its retrieval index from the `Metalslime/` folder on startup.
 - Hosted deployments lock web-side provider and API-key editing; secrets should live in environment variables.
+- For web-based corpus uploads on Render, attach a Persistent Disk and point `METALSLIME_RUNTIME_SOURCE_DIR` at the mounted path.

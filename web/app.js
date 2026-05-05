@@ -12,12 +12,18 @@ const rebuildBtn = document.getElementById("rebuildBtn");
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const clearSettingsBtn = document.getElementById("clearSettingsBtn");
 const sourceDirEl = document.getElementById("sourceDir");
+const sourceHintEl = document.getElementById("sourceHint");
 const providerInputEl = document.getElementById("providerInput");
 const modelPresetInputEl = document.getElementById("modelPresetInput");
 const modelInputEl = document.getElementById("modelInput");
 const apiKeyInputEl = document.getElementById("apiKeyInput");
 const apiKeyHintEl = document.getElementById("apiKeyHint");
 const settingsModeHintEl = document.getElementById("settingsModeHint");
+const runtimeImportHintEl = document.getElementById("runtimeImportHint");
+const runtimeTitleInputEl = document.getElementById("runtimeTitleInput");
+const runtimeFileNameInputEl = document.getElementById("runtimeFileNameInput");
+const runtimeContentInputEl = document.getElementById("runtimeContentInput");
+const runtimeImportBtnEl = document.getElementById("runtimeImportBtn");
 const connectionBannerEl = document.getElementById("connectionBanner");
 const modeBadgeEl = document.getElementById("modeBadge");
 const fileCountEl = document.getElementById("fileCount");
@@ -71,6 +77,7 @@ function bindEvents() {
   logoutBtnEl.addEventListener("click", onLogout);
   formEl.addEventListener("submit", onSubmit);
   rebuildBtn.addEventListener("click", onRebuild);
+  runtimeImportBtnEl.addEventListener("click", onRuntimeImport);
   saveSettingsBtn.addEventListener("click", onSaveSettings);
   clearSettingsBtn.addEventListener("click", onClearSettings);
   providerInputEl.addEventListener("change", onProviderChange);
@@ -226,6 +233,43 @@ async function onSaveSettings(event) {
   }
 }
 
+async function onRuntimeImport() {
+  const content = runtimeContentInputEl.value.trim();
+  if (!content) {
+    appendMessage("assistant", "Import failed: content is required.");
+    return;
+  }
+
+  runtimeImportBtnEl.disabled = true;
+  runtimeImportBtnEl.textContent = "Importing...";
+
+  try {
+    const data = await fetchJson("/api/admin/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: runtimeTitleInputEl.value.trim(),
+        fileName: runtimeFileNameInputEl.value.trim(),
+        content
+      })
+    });
+
+    runtimeTitleInputEl.value = "";
+    runtimeFileNameInputEl.value = "";
+    runtimeContentInputEl.value = "";
+    appendMessage(
+      "assistant",
+      `Runtime corpus imported.\nFile: ${data.fileName}\nFiles: ${data.stats.fileCount}\nChunks: ${data.stats.chunkCount}\nTime: ${formatTime(data.lastBuiltAt)}`
+    );
+    await refreshStatus();
+  } catch (error) {
+    appendMessage("assistant", `Import failed: ${error.message}`);
+  } finally {
+    runtimeImportBtnEl.disabled = false;
+    runtimeImportBtnEl.textContent = "Import And Rebuild";
+  }
+}
+
 async function onClearSettings() {
   saveSettingsBtn.disabled = true;
   clearSettingsBtn.disabled = true;
@@ -266,6 +310,10 @@ async function refreshStatus() {
   chunkCountEl.textContent = data.stats?.chunkCount ?? "-";
   builtAtEl.textContent = data.lastBuiltAt ? formatTime(data.lastBuiltAt) : "-";
   sourceDirEl.value = relativeSourceDir(data.sourceDir || "Metalslime");
+  renderRuntimeImportMode(Boolean(data.runtimeUploadEnabled), data.runtimeSourceDir || "");
+  sourceHintEl.textContent = data.runtimeUploadEnabled
+    ? "Base corpus comes from the repository. Runtime imports are stored in the writable runtime corpus directory and included on rebuild."
+    : "Drop new posts or replies into this folder, then rebuild to refresh the agent.";
 }
 
 async function refreshSettings() {
@@ -413,6 +461,17 @@ function renderSettingsMode(locked) {
   apiKeyHintEl.textContent = locked
     ? "API key is managed server-side and not editable from the web UI."
     : apiKeyHintEl.textContent;
+}
+
+function renderRuntimeImportMode(enabled, runtimeDir) {
+  runtimeTitleInputEl.disabled = !enabled;
+  runtimeFileNameInputEl.disabled = !enabled;
+  runtimeContentInputEl.disabled = !enabled;
+  runtimeImportBtnEl.disabled = !enabled;
+
+  runtimeImportHintEl.textContent = enabled
+    ? `Runtime import is enabled. New entries are written to ${runtimeDir}.`
+    : "Runtime import is disabled. On Render, set METALSLIME_RUNTIME_SOURCE_DIR to a writable persistent disk path and redeploy.";
 }
 
 async function fetchJson(url, options = {}) {

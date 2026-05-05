@@ -66,9 +66,23 @@
           <label class="field-label" for="sourceDir">Metalslime folder</label>
           <input id="sourceDir" class="text-input" value="Metalslime" />
           <button id="rebuildBtn" class="primary-btn">Rebuild Agent</button>
-          <p class="hint">
+          <p id="sourceHint" class="hint">
             Drop new posts or replies into this folder, then rebuild to refresh the agent.
           </p>
+        </section>
+
+        <section class="panel">
+          <h2>Admin Import</h2>
+          <p id="runtimeImportHint" class="hint">
+            Upload runtime corpus entries and rebuild the agent without redeploying.
+          </p>
+          <label class="field-label" for="runtimeTitleInput">Title</label>
+          <input id="runtimeTitleInput" class="text-input" placeholder="Optional title" />
+          <label class="field-label" for="runtimeFileNameInput">File name</label>
+          <input id="runtimeFileNameInput" class="text-input" placeholder="Optional file name" />
+          <label class="field-label" for="runtimeContentInput">Comment / reply content</label>
+          <textarea id="runtimeContentInput" class="composer-input" rows="8" placeholder="Paste the new post, comment, or reply here."></textarea>
+          <button id="runtimeImportBtn" class="primary-btn">Import And Rebuild</button>
         </section>
 
         <section class="panel">

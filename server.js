@@ -11,6 +11,11 @@ const workspaceRoot = __dirname;
 const publicDir = path.join(workspaceRoot, "web");
 const dataDir = path.join(workspaceRoot, "data");
 const defaultSourceDir = path.join(workspaceRoot, "Metalslime");
+const runtimeSourceDir = process.env.METALSLIME_RUNTIME_SOURCE_DIR
+  ? path.resolve(process.env.METALSLIME_RUNTIME_SOURCE_DIR)
+  : hostedDeployment
+    ? ""
+    : path.join(dataDir, "runtime-corpus");
 const profilePath = path.join(workspaceRoot, "metalslime_views.md");
 const promptPath = path.join(workspaceRoot, "metalslime_investment_agent.md");
 const indexPath = path.join(dataDir, "metalslime-index.json");
@@ -91,6 +96,8 @@ const topicRules = [
 
 let state = {
   sourceDir: defaultSourceDir,
+  sourceDirs: [],
+  runtimeSourceDir,
   profile: "",
   agentPrompt: "",
   documents: [],
@@ -133,6 +140,9 @@ server.listen(port, () => {
 
 async function initialize() {
   await fs.mkdir(dataDir, { recursive: true });
+  if (runtimeSourceDir) {
+    await fs.mkdir(runtimeSourceDir, { recursive: true });
+  }
   state.profile = await safeRead(profilePath);
   state.agentPrompt = await safeRead(promptPath);
   state.settings = await loadSettings();
@@ -143,7 +153,7 @@ async function initialize() {
     state.settings.loginKey = generateLoginKey();
     await saveSettings();
   }
-  await rebuildIndex(defaultSourceDir);
+  await rebuildIndex();
 }
 
 async function handleApi(req, res, requestUrl) {
@@ -184,6 +194,9 @@ async function handleApi(req, res, requestUrl) {
   if (req.method === "GET" && requestUrl.pathname === "/api/status") {
     sendJson(res, 200, {
       sourceDir: state.sourceDir,
+      sourceDirs: state.sourceDirs,
+      runtimeSourceDir: state.runtimeSourceDir,
+      runtimeUploadEnabled: Boolean(state.runtimeSourceDir),
       lastBuiltAt: state.lastBuiltAt,
       stats: state.stats,
       hasApiKey: Boolean(getApiKey()),
@@ -240,10 +253,42 @@ async function handleApi(req, res, requestUrl) {
   }
 
   if (req.method === "POST" && requestUrl.pathname === "/api/rebuild") {
-    const body = await readJson(req);
-    const nextDir = body?.sourceDir ? path.resolve(workspaceRoot, body.sourceDir) : defaultSourceDir;
-    const result = await rebuildIndex(nextDir);
+    const result = await rebuildIndex();
     sendJson(res, 200, result);
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/api/admin/import") {
+    if (!state.runtimeSourceDir) {
+      sendJson(res, 400, {
+        error: "Runtime upload is disabled. Set METALSLIME_RUNTIME_SOURCE_DIR to a writable persistent path."
+      });
+      return;
+    }
+
+    const body = await readJson(req);
+    const content = String(body?.content || "").trim();
+    const title = String(body?.title || "").trim();
+    const preferredName = String(body?.fileName || "").trim();
+
+    if (!content) {
+      sendJson(res, 400, { error: "Missing content" });
+      return;
+    }
+
+    const fileName = buildRuntimeFileName(preferredName, title);
+    const fullPath = path.join(state.runtimeSourceDir, fileName);
+    const rendered = renderRuntimeMarkdown(title, content);
+    await fs.writeFile(fullPath, rendered, "utf8");
+    const result = await rebuildIndex();
+
+    sendJson(res, 200, {
+      ok: true,
+      fileName,
+      filePath: fullPath,
+      lastBuiltAt: result.lastBuiltAt,
+      stats: result.stats
+    });
     return;
   }
 
@@ -297,8 +342,9 @@ async function serveStatic(requestPath, res) {
   }
 }
 
-async function rebuildIndex(sourceDir) {
-  const files = await walkMarkdownFiles(sourceDir);
+async function rebuildIndex() {
+  const sourceDirs = getActiveSourceDirs();
+  const files = await walkMarkdownFiles(sourceDirs);
   const documents = [];
 
   for (const file of files) {
@@ -318,7 +364,8 @@ async function rebuildIndex(sourceDir) {
     }
   }
 
-  state.sourceDir = sourceDir;
+  state.sourceDir = defaultSourceDir;
+  state.sourceDirs = sourceDirs;
   state.documents = documents;
   state.lastBuiltAt = new Date().toISOString();
   state.stats = {
@@ -331,6 +378,8 @@ async function rebuildIndex(sourceDir) {
     JSON.stringify(
       {
         sourceDir: state.sourceDir,
+        sourceDirs: state.sourceDirs,
+        runtimeSourceDir: state.runtimeSourceDir,
         profile: state.profile,
         agentPrompt: state.agentPrompt,
         documents: state.documents,
@@ -345,25 +394,41 @@ async function rebuildIndex(sourceDir) {
   return {
     ok: true,
     sourceDir: state.sourceDir,
+    sourceDirs: state.sourceDirs,
+    runtimeSourceDir: state.runtimeSourceDir,
     lastBuiltAt: state.lastBuiltAt,
     stats: state.stats
   };
 }
 
-async function walkMarkdownFiles(dir) {
+function getActiveSourceDirs() {
+  return [defaultSourceDir, state.runtimeSourceDir].filter(Boolean);
+}
+
+async function walkMarkdownFiles(dirs) {
+  const collected = [];
+
+  for (const dir of dirs) {
+    collected.push(...(await walkMarkdownFilesInDir(dir)));
+  }
+
+  return collected.sort((a, b) => a.localeCompare(b, "en"));
+}
+
+async function walkMarkdownFilesInDir(dir) {
   const entries = await fs.readdir(dir, { withFileTypes: true });
   const files = [];
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      files.push(...(await walkMarkdownFiles(fullPath)));
+      files.push(...(await walkMarkdownFilesInDir(fullPath)));
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
       files.push(fullPath);
     }
   }
 
-  return files.sort((a, b) => a.localeCompare(b, "en"));
+  return files;
 }
 
 function extractBlocks(content) {
@@ -970,6 +1035,33 @@ function contentType(filePath) {
   if (ext === ".js") return "application/javascript; charset=utf-8";
   if (ext === ".json") return "application/json; charset=utf-8";
   return "application/octet-stream";
+}
+
+function buildRuntimeFileName(preferredName, title) {
+  const fromName = sanitizeFileSegment(preferredName.replace(/\.md$/i, ""));
+  const fromTitle = sanitizeFileSegment(title);
+  const base = fromName || fromTitle || `runtime-${Date.now()}`;
+  return `${new Date().toISOString().slice(0, 10)}-${base}.md`;
+}
+
+function sanitizeFileSegment(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
+}
+
+function renderRuntimeMarkdown(title, content) {
+  const lines = [];
+  if (title) {
+    lines.push(`# ${title}`);
+    lines.push("");
+  }
+  lines.push(content.trim());
+  lines.push("");
+  return lines.join("\n");
 }
 
 function isPublicApiRoute(pathname) {
