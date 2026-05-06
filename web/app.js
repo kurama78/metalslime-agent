@@ -4,7 +4,8 @@ const formEl = document.getElementById("chatForm");
 const inputEl = document.getElementById("messageInput");
 const loginOverlayEl = document.getElementById("loginOverlay");
 const loginFormEl = document.getElementById("loginForm");
-const loginKeyInputEl = document.getElementById("loginKeyInput");
+const usernameInputEl = document.getElementById("usernameInput");
+const passwordInputEl = document.getElementById("passwordInput");
 const loginBtnEl = document.getElementById("loginBtn");
 const loginErrorEl = document.getElementById("loginError");
 const logoutBtnEl = document.getElementById("logoutBtn");
@@ -117,18 +118,21 @@ async function onRuntimeFileChange(event) {
 async function onLogin(event) {
   event.preventDefault();
   loginBtnEl.disabled = true;
-  loginBtnEl.textContent = "Unlocking...";
+  loginBtnEl.textContent = "Signing in...";
   loginErrorEl.textContent = "";
 
   try {
     await fetchJson("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ loginKey: loginKeyInputEl.value.trim() })
+      body: JSON.stringify({
+        username: usernameInputEl.value.trim(),
+        password: passwordInputEl.value
+      })
     });
 
     isAuthenticated = true;
-    loginKeyInputEl.value = "";
+    passwordInputEl.value = "";
     renderAuthState();
     appendWelcome();
     await refreshSettings();
@@ -137,7 +141,7 @@ async function onLogin(event) {
     loginErrorEl.textContent = error.message || "Login failed";
   } finally {
     loginBtnEl.disabled = false;
-    loginBtnEl.textContent = "Unlock";
+    loginBtnEl.textContent = "Sign In";
   }
 }
 
@@ -165,7 +169,7 @@ function appendWelcome() {
 
   appendMessage(
     "assistant",
-    "This interface uses Metalslime's investment logic, not his tone or phrasing. The left sidebar shows whether Gemini, OpenAI, or local retrieval is currently active."
+    "This interface uses the configured investment corpus and reasoning rules. The left sidebar shows whether Gemini, OpenAI, or local retrieval is currently active."
   );
 }
 
@@ -399,7 +403,7 @@ function renderModelPresets(provider, currentModel) {
 }
 
 function defaultModelForProvider(provider) {
-  return provider === "openai" ? "gpt-4.1-mini" : "gemini-2.5-flash";
+  return provider === "openai" ? "gpt-4.1-mini" : "gemini-3.1-pro-preview";
 }
 
 function isKnownDefaultModel(model) {
@@ -512,7 +516,7 @@ function renderRuntimeImportMode(enabled, runtimeDir) {
 
   runtimeImportHintEl.textContent = enabled
     ? `Runtime import is enabled. New entries are written to ${runtimeDir}.`
-    : "Runtime import is disabled. On Render, set METALSLIME_RUNTIME_SOURCE_DIR to a writable persistent disk path and redeploy.";
+    : "Runtime import is disabled. On Render, set YINUO_RUNTIME_SOURCE_DIR to a writable persistent disk path and redeploy.";
 }
 
 async function fetchJson(url, options = {}) {

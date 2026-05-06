@@ -1,8 +1,8 @@
-# Metalslime Agent
+# yinuo-agent
 
-A lightweight web app that turns recent `Metalslime` posts and replies into a searchable investment-analysis agent.
+A lightweight web app that turns the local investment corpus into a searchable investment-analysis agent.
 
-The agent is designed around **Metalslime's decision logic**, not his tone or writing style. It emphasizes:
+The agent is designed around structured decision logic, not imitation of any writer's tone. It emphasizes:
 
 - industry beta before stock alpha
 - money-making effect before valuation expansion
@@ -14,12 +14,12 @@ The agent is designed around **Metalslime's decision logic**, not his tone or wr
 - Local corpus indexing from the `Metalslime/` folder
 - Web chat interface
 - Gemini or OpenAI provider support
-- Login-key protection for web access
+- Username/password login for public web access
 - Render-ready deployment config
 
 ## Project structure
 
-- [`server.js`](./server.js): Node server and retrieval logic
+- [`server.js`](./server.js): Node server, auth, and retrieval logic
 - [`web/`](./web): frontend UI
 - [`Metalslime/`](./Metalslime): source markdown corpus
 - [`metalslime_views.md`](./metalslime_views.md): distilled viewpoint summary
@@ -37,21 +37,29 @@ Then open:
 
 - [http://localhost:3000](http://localhost:3000)
 
+If no local login is configured, the server generates a local password and prints it once in the startup log. The default username is `admin`.
+
 ## Environment variables
 
-Recommended for hosted deployment:
+Required for hosted deployment:
 
-- `METALSLIME_LOGIN_KEY`
+- `YINUO_WEB_USERNAME`
+- `YINUO_WEB_PASSWORD` or `YINUO_WEB_PASSWORD_SHA256`
 - `GEMINI_API_KEY`
+
+Recommended:
+
 - `LLM_PROVIDER=gemini`
-- `GEMINI_MODEL=gemini-3-flash-preview`
-- `METALSLIME_RUNTIME_SOURCE_DIR=/var/data/metalslime-runtime`
+- `GEMINI_MODEL=gemini-3.1-pro-preview`
+- `YINUO_RUNTIME_SOURCE_DIR=/var/data/yinuo-runtime`
 
 Optional for OpenAI:
 
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `LLM_PROVIDER=openai`
+
+Legacy variable names such as `METALSLIME_LOGIN_KEY` and `METALSLIME_RUNTIME_SOURCE_DIR` are still accepted for local compatibility, but new deployments should use the `YINUO_*` names.
 
 ## Render deployment
 
@@ -60,6 +68,6 @@ See [`DEPLOY_RENDER.md`](./DEPLOY_RENDER.md) for the deployment steps.
 ## Notes
 
 - Runtime data and secrets are intentionally excluded from Git.
-- The app rebuilds its retrieval index from the `Metalslime/` folder on startup.
+- The app rebuilds its retrieval index from the local markdown corpus on startup.
 - Hosted deployments lock web-side provider and API-key editing; secrets should live in environment variables.
-- For web-based corpus uploads on Render, attach a Persistent Disk and point `METALSLIME_RUNTIME_SOURCE_DIR` at the mounted path.
+- For web-based corpus uploads on Render, attach a Persistent Disk and point `YINUO_RUNTIME_SOURCE_DIR` at the mounted path.

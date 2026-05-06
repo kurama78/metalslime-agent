@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,18 +10,19 @@ const __dirname = path.dirname(__filename);
 const workspaceRoot = __dirname;
 const publicDir = path.join(workspaceRoot, "web");
 const dataDir = path.join(workspaceRoot, "data");
+const hostedDeployment = Boolean(process.env.RENDER || process.env.RENDER_EXTERNAL_URL);
 const defaultSourceDir = path.join(workspaceRoot, "Metalslime");
-const runtimeSourceDir = process.env.METALSLIME_RUNTIME_SOURCE_DIR
-  ? path.resolve(process.env.METALSLIME_RUNTIME_SOURCE_DIR)
+const runtimeSourceDir = process.env.YINUO_RUNTIME_SOURCE_DIR || process.env.METALSLIME_RUNTIME_SOURCE_DIR
+  ? path.resolve(process.env.YINUO_RUNTIME_SOURCE_DIR || process.env.METALSLIME_RUNTIME_SOURCE_DIR)
   : hostedDeployment
     ? ""
     : path.join(dataDir, "runtime-corpus");
 const profilePath = path.join(workspaceRoot, "metalslime_views.md");
 const promptPath = path.join(workspaceRoot, "metalslime_investment_agent.md");
-const indexPath = path.join(dataDir, "metalslime-index.json");
+const indexPath = path.join(dataDir, "yinuo-index.json");
 const settingsPath = path.join(dataDir, "settings.json");
 const port = Number(process.env.PORT || 3000);
-const hostedDeployment = Boolean(process.env.RENDER || process.env.RENDER_EXTERNAL_URL);
+const sessionCookieName = "yinuo_session";
 
 const topicRules = [
   {
@@ -106,7 +107,9 @@ let state = {
   settings: {
     provider: "gemini",
     apiKey: "",
-    model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+    model: process.env.GEMINI_MODEL || "gemini-3.1-pro-preview",
+    username: "admin",
+    passwordHash: "",
     loginKey: ""
   }
 };
@@ -135,7 +138,7 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`Metalslime agent running at http://localhost:${port}`);
+  console.log(`yinuo-agent running at http://localhost:${port}`);
 });
 
 async function initialize() {
@@ -144,11 +147,16 @@ async function initialize() {
   state.profile = await safeRead(profilePath);
   state.agentPrompt = await safeRead(promptPath);
   state.settings = await loadSettings();
-  if (hostedDeployment && !state.settings.loginKey) {
-    throw new Error("METALSLIME_LOGIN_KEY must be set for hosted deployment.");
+  if (hostedDeployment && (!state.settings.username || !state.settings.passwordHash)) {
+    throw new Error(
+      "Web login is not configured. Set YINUO_WEB_USERNAME and either YINUO_WEB_PASSWORD_SHA256 or YINUO_WEB_PASSWORD before exposing the app."
+    );
   }
-  if (!hostedDeployment && !state.settings.loginKey) {
+  if (!hostedDeployment && !state.settings.passwordHash) {
     state.settings.loginKey = generateLoginKey();
+    state.settings.username = state.settings.username || "admin";
+    state.settings.passwordHash = sha256(state.settings.loginKey);
+    console.log(`Local login generated. Username: ${state.settings.username}; password: ${state.settings.loginKey}`);
     await saveSettings();
   }
   await rebuildIndex();
@@ -165,10 +173,11 @@ async function handleApi(req, res, requestUrl) {
 
   if (req.method === "POST" && requestUrl.pathname === "/api/auth/login") {
     const body = await readJson(req);
-    const loginKey = String(body?.loginKey || "");
+    const username = String(body?.username || "");
+    const password = String(body?.password || "");
 
-    if (!loginKey || !constantTimeEquals(loginKey, state.settings.loginKey)) {
-      sendJson(res, 401, { error: "Invalid login key" });
+    if (!isValidLogin(username, password)) {
+      sendJson(res, 401, { error: "Invalid username or password" });
       return;
     }
 
@@ -259,7 +268,7 @@ async function handleApi(req, res, requestUrl) {
   if (req.method === "POST" && requestUrl.pathname === "/api/admin/import") {
     if (!state.runtimeSourceDir) {
       sendJson(res, 400, {
-        error: "Runtime upload is disabled. Set METALSLIME_RUNTIME_SOURCE_DIR to a writable persistent path."
+        error: "Runtime upload is disabled. Set YINUO_RUNTIME_SOURCE_DIR to a writable persistent path."
       });
       return;
     }
@@ -917,6 +926,7 @@ async function loadSettings() {
   try {
     const raw = JSON.parse(await fs.readFile(settingsPath, "utf8"));
     const provider = normalizeProvider(process.env.LLM_PROVIDER || raw.provider);
+    const auth = loadAuthSettings(raw);
     return {
       provider,
       apiKey:
@@ -927,12 +937,7 @@ async function loadSettings() {
             : typeof raw.apiKey === "string"
               ? raw.apiKey
               : "",
-      loginKey:
-        typeof process.env.METALSLIME_LOGIN_KEY === "string" && process.env.METALSLIME_LOGIN_KEY.trim()
-          ? process.env.METALSLIME_LOGIN_KEY.trim()
-          : typeof raw.loginKey === "string"
-            ? raw.loginKey
-            : "",
+      ...auth,
       model:
         typeof process.env.GEMINI_MODEL === "string" && provider === "gemini" && process.env.GEMINI_MODEL.trim()
           ? process.env.GEMINI_MODEL.trim()
@@ -944,16 +949,43 @@ async function loadSettings() {
     };
   } catch {
     const provider = process.env.LLM_PROVIDER === "openai" ? "openai" : "gemini";
+    const auth = loadAuthSettings({});
     return {
       provider,
       apiKey:
         provider === "openai"
           ? process.env.OPENAI_API_KEY || ""
           : process.env.GEMINI_API_KEY || "",
-      loginKey: typeof process.env.METALSLIME_LOGIN_KEY === "string" ? process.env.METALSLIME_LOGIN_KEY : "",
+      ...auth,
       model: defaultModelForProvider(provider)
     };
   }
+}
+
+function loadAuthSettings(raw) {
+  const username = firstNonEmpty(
+    process.env.YINUO_WEB_USERNAME,
+    process.env.METALSLIME_WEB_USERNAME,
+    raw.username,
+    raw.authUsername,
+    "admin"
+  );
+  const passwordHash = normalizeSha256(
+    firstNonEmpty(
+      process.env.YINUO_WEB_PASSWORD_SHA256,
+      process.env.METALSLIME_WEB_PASSWORD_SHA256,
+      raw.passwordHash,
+      raw.authPasswordHash
+    )
+  );
+  const password = firstNonEmpty(process.env.YINUO_WEB_PASSWORD, process.env.METALSLIME_WEB_PASSWORD);
+  const loginKey = firstNonEmpty(process.env.YINUO_LOGIN_KEY, process.env.METALSLIME_LOGIN_KEY, raw.loginKey);
+
+  return {
+    username,
+    passwordHash: password ? sha256(password) : passwordHash || (loginKey ? sha256(loginKey) : ""),
+    loginKey: hostedDeployment ? "" : loginKey || ""
+  };
 }
 
 async function saveSettings() {
@@ -987,7 +1019,7 @@ function normalizeProvider(value) {
 function defaultModelForProvider(provider) {
   return provider === "openai"
     ? process.env.OPENAI_MODEL || "gpt-4.1-mini"
-    : process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    : process.env.GEMINI_MODEL || "gemini-3.1-pro-preview";
 }
 
 function maskApiKey(apiKey) {
@@ -1197,12 +1229,26 @@ function isAuthenticated(req) {
   return Boolean(sessionId && sessions.has(sessionId));
 }
 
+function isValidLogin(username, password) {
+  const expectedUsername = state.settings.username || "admin";
+  const expectedPasswordHash = state.settings.passwordHash || "";
+
+  if (!username || !password || !expectedPasswordHash) {
+    return false;
+  }
+
+  return (
+    constantTimeEquals(username, expectedUsername) &&
+    constantTimeEquals(sha256(password), expectedPasswordHash)
+  );
+}
+
 function getSessionId(req) {
   const cookieHeader = req.headers.cookie || "";
   const cookies = cookieHeader.split(";").map((part) => part.trim());
   for (const cookie of cookies) {
-    if (cookie.startsWith("metalslime_session=")) {
-      return decodeURIComponent(cookie.slice("metalslime_session=".length));
+    if (cookie.startsWith(`${sessionCookieName}=`)) {
+      return decodeURIComponent(cookie.slice(sessionCookieName.length + 1));
     }
   }
   return "";
@@ -1210,12 +1256,12 @@ function getSessionId(req) {
 
 function setSessionCookie(req, res, sessionId) {
   const secure = isSecureRequest(req) ? "; Secure" : "";
-  res.setHeader("Set-Cookie", `metalslime_session=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax${secure}`);
+  res.setHeader("Set-Cookie", `${sessionCookieName}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax${secure}`);
 }
 
 function clearSessionCookie(req, res) {
   const secure = isSecureRequest(req) ? "; Secure" : "";
-  res.setHeader("Set-Cookie", `metalslime_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
+  res.setHeader("Set-Cookie", `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
 }
 
 function isSecureRequest(req) {
@@ -1225,12 +1271,32 @@ function isSecureRequest(req) {
 function constantTimeEquals(left, right) {
   const leftBuffer = Buffer.from(String(left), "utf8");
   const rightBuffer = Buffer.from(String(right), "utf8");
-  if (leftBuffer.length !== rightBuffer.length) {
-    return false;
-  }
-  return timingSafeEqual(leftBuffer, rightBuffer);
+  const length = Math.max(leftBuffer.length, rightBuffer.length, 1);
+  const paddedLeft = Buffer.alloc(length);
+  const paddedRight = Buffer.alloc(length);
+  leftBuffer.copy(paddedLeft);
+  rightBuffer.copy(paddedRight);
+  return timingSafeEqual(paddedLeft, paddedRight) && leftBuffer.length === rightBuffer.length;
 }
 
 function generateLoginKey() {
   return randomBytes(24).toString("base64url");
+}
+
+function sha256(value) {
+  return createHash("sha256").update(String(value), "utf8").digest("hex");
+}
+
+function normalizeSha256(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(normalized) ? normalized : "";
+}
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
 }

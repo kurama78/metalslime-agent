@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: metalslime-agent
+    name: yinuo-agent
     runtime: node
     plan: starter
     buildCommand: npm install
@@ -10,8 +10,10 @@ services:
       - key: LLM_PROVIDER
         value: gemini
       - key: GEMINI_MODEL
-        value: gemini-3-flash-preview
-      - key: METALSLIME_LOGIN_KEY
+        value: gemini-3.1-pro-preview
+      - key: YINUO_WEB_USERNAME
+        sync: false
+      - key: YINUO_WEB_PASSWORD
         sync: false
       - key: GEMINI_API_KEY
         sync: false

@@ -3,24 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Metalslime Agent</title>
+    <title>yinuo-agent</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div id="loginOverlay" class="login-overlay">
       <div class="login-card">
         <div class="brand">
-          <div class="brand-mark">M</div>
+          <div class="brand-mark">Y</div>
           <div>
-            <h1>Metalslime Agent</h1>
+            <h1>yinuo-agent</h1>
             <p>Protected access</p>
           </div>
         </div>
         <form id="loginForm" class="login-form">
-          <label class="field-label" for="loginKeyInput">Login key</label>
-          <input id="loginKeyInput" class="text-input" type="password" autocomplete="current-password" />
+          <label class="field-label" for="usernameInput">Username</label>
+          <input id="usernameInput" class="text-input" type="text" autocomplete="username" />
+          <label class="field-label" for="passwordInput">Password</label>
+          <input id="passwordInput" class="text-input" type="password" autocomplete="current-password" />
           <p id="loginError" class="hint login-error"></p>
-          <button id="loginBtn" class="primary-btn" type="submit">Unlock</button>
+          <button id="loginBtn" class="primary-btn" type="submit">Sign In</button>
         </form>
       </div>
     </div>
@@ -28,9 +30,9 @@
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark">M</div>
+          <div class="brand-mark">Y</div>
           <div>
-            <h1>Metalslime Agent</h1>
+            <h1>yinuo-agent</h1>
             <p>Local retrieval with optional LLM mode</p>
           </div>
         </div>
@@ -63,7 +65,7 @@
 
         <section class="panel">
           <h2>Source</h2>
-          <label class="field-label" for="sourceDir">Metalslime folder</label>
+          <label class="field-label" for="sourceDir">Corpus folder</label>
           <input id="sourceDir" class="text-input" value="Metalslime" />
           <button id="rebuildBtn" class="primary-btn">Rebuild Agent</button>
           <p id="sourceHint" class="hint">
@@ -98,7 +100,7 @@
           <label class="field-label" for="modelPresetInput">Model preset</label>
           <select id="modelPresetInput" class="text-input"></select>
           <label class="field-label" for="modelInput">Model name</label>
-          <input id="modelInput" class="text-input" value="gemini-2.5-flash" />
+          <input id="modelInput" class="text-input" value="gemini-3.1-pro-preview" />
           <label class="field-label" for="apiKeyInput">API key</label>
           <input id="apiKeyInput" class="text-input" type="password" placeholder="sk-..." />
           <p id="apiKeyHint" class="hint">No API key saved.</p>
@@ -127,7 +129,7 @@
             <textarea
               id="messageInput"
               class="composer-input"
-              placeholder="Ask in Chinese or English. Example: Analyze whether new energy now looks more like a rebound or a beta repair in Metalslime's framework."
+              placeholder="Ask in Chinese or English. Example: Analyze whether new energy now looks more like a rebound or a beta repair in this framework."
               rows="4"
             ></textarea>
             <div class="composer-row">
