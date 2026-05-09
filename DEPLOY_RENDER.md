@@ -5,9 +5,9 @@
 This app is ready for Render public web deployment:
 
 - Service name is `yinuo-agent`
-- Gemini calls use native `fetch()`
+- Gemini and DeepSeek calls use native `fetch()`
 - Hosted deployments require server-side login credentials
-- Web UI settings are read-only on hosted deployments
+- Hosted deployments can save provider, model, and API key from the authenticated web UI unless environment variables lock them
 - Login is protected by an HTTP-only session cookie
 
 ## Required environment variables
@@ -16,7 +16,6 @@ Set these in Render:
 
 - `YINUO_WEB_USERNAME`
 - `YINUO_WEB_PASSWORD`
-- `GEMINI_API_KEY`
 
 For stronger secret handling, you can set `YINUO_WEB_PASSWORD_SHA256` instead of `YINUO_WEB_PASSWORD`.
 
@@ -31,6 +30,12 @@ Optional for OpenAI:
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `LLM_PROVIDER=openai`
+
+Optional for DeepSeek:
+
+- `DEEPSEEK_API_KEY`
+- `DEEPSEEK_MODEL=deepseek-v4-pro`
+- `LLM_PROVIDER=deepseek`
 
 ## Deploy steps
 
@@ -53,6 +58,7 @@ If you want to upload new markdown corpus files from the web UI without redeploy
 
 ## Notes
 
-- Do not store secrets in `data/settings.json` on Render.
+- If `LLM_PROVIDER`, `*_API_KEY`, or `*_MODEL` environment variables are set, the web settings panel becomes read-only.
+- On the Render public URL, API keys entered in the web UI are sent over HTTPS and stored server-side.
 - The `Metalslime` folder is deployed as part of the repo contents.
 - To update the base corpus without a disk, add new markdown files to the repo and redeploy.

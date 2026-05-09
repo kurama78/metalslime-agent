@@ -138,6 +138,12 @@ body {
   border: 1px solid #bfd2ec;
 }
 
+.connection-deepseek {
+  background: #f1e9fb;
+  color: #5b2b86;
+  border: 1px solid #d8c1ef;
+}
+
 .connection-local {
   background: #f5efe2;
   color: #7a5620;

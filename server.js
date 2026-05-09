@@ -12,17 +12,20 @@ const publicDir = path.join(workspaceRoot, "web");
 const dataDir = path.join(workspaceRoot, "data");
 const hostedDeployment = Boolean(process.env.RENDER || process.env.RENDER_EXTERNAL_URL);
 const defaultSourceDir = path.join(workspaceRoot, "Metalslime");
-const runtimeSourceDir = process.env.YINUO_RUNTIME_SOURCE_DIR || process.env.METALSLIME_RUNTIME_SOURCE_DIR
-  ? path.resolve(process.env.YINUO_RUNTIME_SOURCE_DIR || process.env.METALSLIME_RUNTIME_SOURCE_DIR)
+const runtimeSourceDirEnv = process.env.YINUO_RUNTIME_SOURCE_DIR || process.env.METALSLIME_RUNTIME_SOURCE_DIR || "";
+const runtimeSourceDir = runtimeSourceDirEnv
+  ? path.resolve(runtimeSourceDirEnv)
   : hostedDeployment
     ? ""
     : path.join(dataDir, "runtime-corpus");
+const stateDir = resolveStateDir();
 const profilePath = path.join(workspaceRoot, "metalslime_views.md");
 const promptPath = path.join(workspaceRoot, "metalslime_investment_agent.md");
 const indexPath = path.join(dataDir, "yinuo-index.json");
-const settingsPath = path.join(dataDir, "settings.json");
+const defaultSettingsPath = path.join(dataDir, "settings.json");
 const port = Number(process.env.PORT || 3000);
 const sessionCookieName = "yinuo_session";
+let settingsPath = path.join(stateDir, "settings.json");
 
 const topicRules = [
   {
@@ -143,6 +146,7 @@ server.listen(port, () => {
 
 async function initialize() {
   await fs.mkdir(dataDir, { recursive: true });
+  settingsPath = await ensureSettingsPath();
   state.runtimeSourceDir = await ensureRuntimeSourceDir(runtimeSourceDir);
   state.profile = await safeRead(profilePath);
   state.agentPrompt = await safeRead(promptPath);
@@ -219,15 +223,15 @@ async function handleApi(req, res, requestUrl) {
       apiKeyMasked: maskApiKey(getApiKey()),
       model: getModel(),
       provider: getProvider(),
-      settingsLocked: hostedDeployment
+      settingsLocked: areLlmSettingsManagedByEnv()
     });
     return;
   }
 
   if (req.method === "POST" && requestUrl.pathname === "/api/settings") {
-    if (hostedDeployment) {
+    if (areLlmSettingsManagedByEnv()) {
       sendJson(res, 403, {
-        error: "Settings are managed by environment variables in hosted deployment."
+        error: "Settings are managed by environment variables."
       });
       return;
     }
@@ -254,7 +258,7 @@ async function handleApi(req, res, requestUrl) {
       apiKeyMasked: maskApiKey(getApiKey()),
       model: getModel(),
       provider: getProvider(),
-      settingsLocked: hostedDeployment
+      settingsLocked: areLlmSettingsManagedByEnv()
     });
     return;
   }
@@ -711,6 +715,67 @@ async function generateWithOpenAI(message, history, retrieval) {
   };
 }
 
+async function generateWithDeepSeek(message, history, retrieval) {
+  const model = getModel();
+  const freshnessWarning = buildFreshnessInstruction(message, false);
+  const evidence = retrieval
+    .map(
+      (item, index) =>
+        `[${index + 1}] ${path.basename(item.file)}:${item.lineStart}-${item.lineEnd} (${item.topic}) ${item.text}`
+    )
+    .join("\n");
+
+  const recentHistory = history
+    .slice(-8)
+    .map((item) => `${item.role === "assistant" ? "Assistant" : "User"}: ${item.content}`)
+    .join("\n");
+
+  const messages = [
+    {
+      role: "system",
+      content: `${state.agentPrompt}\n\nToday is ${getCurrentDateString()}.\n\nOnly answer from the provided materials and obvious inference. Do not invent holdings or precise views that are not supported by the source documents.\n\n${freshnessWarning}`
+    },
+    {
+      role: "user",
+      content: `Metalslime summary:\n${state.profile}\n\nRetrieved source snippets:\n${evidence}\n\nRecent conversation:\n${recentHistory || "None"}\n\nQuestion:\n${message}`
+    }
+  ];
+
+  const response = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getApiKey()}`
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: false
+    })
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    return {
+      answer: [
+        "DeepSeek API call failed.",
+        "",
+        detail.slice(0, 300),
+        "",
+        generateLocalAnswer(message, retrieval)
+      ].join("\n"),
+      webSources: []
+    };
+  }
+
+  const data = await response.json();
+  const answer = data?.choices?.[0]?.message?.content;
+  return {
+    answer: typeof answer === "string" && answer.trim() ? answer.trim() : generateLocalAnswer(message, retrieval),
+    webSources: []
+  };
+}
+
 async function generateWithGemini(message, history, retrieval) {
   const model = getModel();
   const grounded = needsFreshPublicInfo(message);
@@ -778,6 +843,9 @@ async function generateWithProvider(message, history, retrieval) {
   const provider = getProvider();
   if (provider === "gemini") {
     return generateWithGemini(message, history, retrieval);
+  }
+  if (provider === "deepseek") {
+    return generateWithDeepSeek(message, history, retrieval);
   }
   return generateWithOpenAI(message, history, retrieval);
 }
@@ -934,6 +1002,8 @@ async function loadSettings() {
           ? process.env.GEMINI_API_KEY
           : typeof process.env.OPENAI_API_KEY === "string" && provider === "openai"
             ? process.env.OPENAI_API_KEY
+            : typeof process.env.DEEPSEEK_API_KEY === "string" && provider === "deepseek"
+              ? process.env.DEEPSEEK_API_KEY
             : typeof raw.apiKey === "string"
               ? raw.apiKey
               : "",
@@ -943,19 +1013,23 @@ async function loadSettings() {
           ? process.env.GEMINI_MODEL.trim()
           : typeof process.env.OPENAI_MODEL === "string" && provider === "openai" && process.env.OPENAI_MODEL.trim()
             ? process.env.OPENAI_MODEL.trim()
+            : typeof process.env.DEEPSEEK_MODEL === "string" && provider === "deepseek" && process.env.DEEPSEEK_MODEL.trim()
+              ? process.env.DEEPSEEK_MODEL.trim()
             : typeof raw.model === "string" && raw.model.trim()
               ? raw.model
               : defaultModelForProvider(provider)
     };
   } catch {
-    const provider = process.env.LLM_PROVIDER === "openai" ? "openai" : "gemini";
+    const provider = normalizeProvider(process.env.LLM_PROVIDER || "");
     const auth = loadAuthSettings({});
     return {
       provider,
       apiKey:
         provider === "openai"
           ? process.env.OPENAI_API_KEY || ""
-          : process.env.GEMINI_API_KEY || "",
+          : provider === "deepseek"
+            ? process.env.DEEPSEEK_API_KEY || ""
+            : process.env.GEMINI_API_KEY || "",
       ...auth,
       model: defaultModelForProvider(provider)
     };
@@ -989,9 +1063,6 @@ function loadAuthSettings(raw) {
 }
 
 async function saveSettings() {
-  if (hostedDeployment) {
-    return;
-  }
   await fs.writeFile(settingsPath, JSON.stringify(state.settings, null, 2));
 }
 
@@ -999,9 +1070,13 @@ function getApiKey() {
   if (state.settings.apiKey) {
     return state.settings.apiKey;
   }
-  return getProvider() === "gemini"
-    ? process.env.GEMINI_API_KEY || ""
-    : process.env.OPENAI_API_KEY || "";
+  if (getProvider() === "gemini") {
+    return process.env.GEMINI_API_KEY || "";
+  }
+  if (getProvider() === "deepseek") {
+    return process.env.DEEPSEEK_API_KEY || "";
+  }
+  return process.env.OPENAI_API_KEY || "";
 }
 
 function getModel() {
@@ -1013,13 +1088,17 @@ function getProvider() {
 }
 
 function normalizeProvider(value) {
-  return value === "openai" ? "openai" : "gemini";
+  return value === "openai" || value === "deepseek" ? value : "gemini";
 }
 
 function defaultModelForProvider(provider) {
-  return provider === "openai"
-    ? process.env.OPENAI_MODEL || "gpt-4.1-mini"
-    : process.env.GEMINI_MODEL || "gemini-3.1-pro-preview";
+  if (provider === "openai") {
+    return process.env.OPENAI_MODEL || "gpt-4.1-mini";
+  }
+  if (provider === "deepseek") {
+    return process.env.DEEPSEEK_MODEL || "deepseek-v4-pro";
+  }
+  return process.env.GEMINI_MODEL || "gemini-3.1-pro-preview";
 }
 
 function maskApiKey(apiKey) {
@@ -1220,6 +1299,24 @@ async function ensureRuntimeSourceDir(dir) {
   }
 }
 
+async function ensureSettingsPath() {
+  try {
+    await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+    return settingsPath;
+  } catch (error) {
+    if (hostedDeployment && path.dirname(settingsPath) !== dataDir) {
+      console.warn(
+        `Persistent settings storage is unavailable at ${path.dirname(settingsPath)}. ` +
+          `Falling back to the app data directory for this boot.`
+      );
+      console.warn(error);
+      await fs.mkdir(dataDir, { recursive: true });
+      return defaultSettingsPath;
+    }
+    throw error;
+  }
+}
+
 function isPublicApiRoute(pathname) {
   return pathname === "/api/auth/status" || pathname === "/api/auth/login";
 }
@@ -1299,4 +1396,28 @@ function firstNonEmpty(...values) {
     }
   }
   return "";
+}
+
+function resolveStateDir() {
+  const configured = firstNonEmpty(process.env.YINUO_STATE_DIR, process.env.METALSLIME_STATE_DIR);
+  if (configured) {
+    return path.resolve(configured);
+  }
+  if (hostedDeployment && runtimeSourceDirEnv) {
+    return path.dirname(path.resolve(runtimeSourceDirEnv));
+  }
+  return dataDir;
+}
+
+function areLlmSettingsManagedByEnv() {
+  const managedVariables = [
+    process.env.LLM_PROVIDER,
+    process.env.GEMINI_API_KEY,
+    process.env.GEMINI_MODEL,
+    process.env.OPENAI_API_KEY,
+    process.env.OPENAI_MODEL,
+    process.env.DEEPSEEK_API_KEY,
+    process.env.DEEPSEEK_MODEL
+  ];
+  return managedVariables.some((value) => typeof value === "string" && value.trim());
 }

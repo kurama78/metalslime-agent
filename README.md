@@ -13,7 +13,7 @@ The agent is designed around structured decision logic, not imitation of any wri
 
 - Local corpus indexing from the `Metalslime/` folder
 - Web chat interface
-- Gemini or OpenAI provider support
+- Gemini, DeepSeek, or OpenAI provider support
 - Username/password login for public web access
 - Render-ready deployment config
 
@@ -45,13 +45,18 @@ Required for hosted deployment:
 
 - `YINUO_WEB_USERNAME`
 - `YINUO_WEB_PASSWORD` or `YINUO_WEB_PASSWORD_SHA256`
-- `GEMINI_API_KEY`
 
 Recommended:
 
 - `LLM_PROVIDER=gemini`
 - `GEMINI_MODEL=gemini-3.1-pro-preview`
 - `YINUO_RUNTIME_SOURCE_DIR=/var/data/yinuo-runtime`
+
+Optional for DeepSeek:
+
+- `DEEPSEEK_API_KEY`
+- `DEEPSEEK_MODEL` (default: `deepseek-v4-pro`)
+- `LLM_PROVIDER=deepseek`
 
 Optional for OpenAI:
 
@@ -69,5 +74,6 @@ See [`DEPLOY_RENDER.md`](./DEPLOY_RENDER.md) for the deployment steps.
 
 - Runtime data and secrets are intentionally excluded from Git.
 - The app rebuilds its retrieval index from the local markdown corpus on startup.
-- Hosted deployments lock web-side provider and API-key editing; secrets should live in environment variables.
+- Hosted deployments can accept API keys from the authenticated web UI unless LLM provider/model/key are forced by environment variables.
+- On HTTPS deployments, API keys entered in the web UI are transmitted over TLS and stored server-side.
 - For web-based corpus uploads on Render, attach a Persistent Disk and point `YINUO_RUNTIME_SOURCE_DIR` at the mounted path.

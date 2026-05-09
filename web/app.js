@@ -48,6 +48,12 @@ const MODEL_PRESETS = {
     "gemini-1.5-flash",
     "custom"
   ],
+  deepseek: [
+    "deepseek-v4-pro",
+    "deepseek-chat",
+    "deepseek-reasoner",
+    "custom"
+  ],
   openai: [
     "gpt-4.1-mini",
     "gpt-4.1",
@@ -169,7 +175,7 @@ function appendWelcome() {
 
   appendMessage(
     "assistant",
-    "This interface uses the configured investment corpus and reasoning rules. The left sidebar shows whether Gemini, OpenAI, or local retrieval is currently active."
+    "This interface uses the configured investment corpus and reasoning rules. The left sidebar shows whether Gemini, DeepSeek, OpenAI, or local retrieval is currently active."
   );
 }
 
@@ -247,7 +253,7 @@ async function onSaveSettings(event) {
       : "No API key saved.";
     appendMessage(
       "assistant",
-      `Settings saved.\nProvider: ${capitalize(data.provider)}\nModel: ${data.model}\nAPI key: ${data.hasApiKey ? "configured" : "not configured"}`
+      `Settings saved.\nProvider: ${displayProviderName(data.provider)}\nModel: ${data.model}\nAPI key: ${data.hasApiKey ? "configured" : "not configured"}`
     );
     await refreshStatus();
   } catch (error) {
@@ -335,8 +341,8 @@ async function refreshStatus() {
   const data = await fetchJson("/api/status");
 
   modeBadgeEl.textContent = data.hasApiKey
-    ? `${capitalize(data.provider)} / ${data.model}`
-    : `Local retrieval (${capitalize(data.provider)})`;
+    ? `${displayProviderName(data.provider)} / ${data.model}`
+    : `Local retrieval (${displayProviderName(data.provider)})`;
   renderConnectionBanner(data);
   fileCountEl.textContent = data.stats?.fileCount ?? "-";
   chunkCountEl.textContent = data.stats?.chunkCount ?? "-";
@@ -373,7 +379,11 @@ function onProviderChange() {
 }
 
 function updateApiKeyPlaceholder() {
-  apiKeyInputEl.placeholder = providerInputEl.value === "openai" ? "sk-..." : "AIza...";
+  if (providerInputEl.value === "gemini") {
+    apiKeyInputEl.placeholder = "AIza...";
+    return;
+  }
+  apiKeyInputEl.placeholder = "sk-...";
 }
 
 function onModelPresetChange() {
@@ -403,7 +413,13 @@ function renderModelPresets(provider, currentModel) {
 }
 
 function defaultModelForProvider(provider) {
-  return provider === "openai" ? "gpt-4.1-mini" : "gemini-3.1-pro-preview";
+  if (provider === "openai") {
+    return "gpt-4.1-mini";
+  }
+  if (provider === "deepseek") {
+    return "deepseek-v4-pro";
+  }
+  return "gemini-3.1-pro-preview";
 }
 
 function isKnownDefaultModel(model) {
@@ -412,6 +428,13 @@ function isKnownDefaultModel(model) {
 
 function capitalize(value) {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+}
+
+function displayProviderName(value) {
+  if (value === "deepseek") {
+    return "DeepSeek";
+  }
+  return capitalize(value);
 }
 
 function renderConnectionBanner(status) {
@@ -425,12 +448,18 @@ function renderConnectionBanner(status) {
 
   if (status.provider === "gemini") {
     connectionBannerEl.classList.add("connection-gemini");
-    connectionBannerEl.textContent = `Gemini connected · ${status.model}`;
+    connectionBannerEl.textContent = `Gemini connected - ${status.model}`;
+    return;
+  }
+
+  if (status.provider === "deepseek") {
+    connectionBannerEl.classList.add("connection-deepseek");
+    connectionBannerEl.textContent = `DeepSeek connected - ${status.model}`;
     return;
   }
 
   connectionBannerEl.classList.add("connection-openai");
-  connectionBannerEl.textContent = `OpenAI connected · ${status.model}`;
+  connectionBannerEl.textContent = `OpenAI connected - ${status.model}`;
 }
 
 function appendMessage(role, text) {
@@ -501,8 +530,10 @@ function renderSettingsMode(locked) {
   clearSettingsBtn.disabled = locked;
 
   settingsModeHintEl.textContent = locked
-    ? "Hosted deployment detected. Provider, model, API key, and login key are managed by environment variables."
-    : "Configure provider, model, and API keys here.";
+    ? "This deployment is locked by environment variables. Provider, model, and API key cannot be edited from the web UI."
+    : window.location.protocol === "https:"
+      ? "Configure provider, model, and API keys here. API keys are submitted over HTTPS and stored server-side."
+      : "Configure provider, model, and API keys here. This page is using HTTP, so use the hosted HTTPS site when entering an API key.";
   apiKeyHintEl.textContent = locked
     ? "API key is managed server-side and not editable from the web UI."
     : apiKeyHintEl.textContent;
